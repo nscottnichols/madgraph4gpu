@@ -1,7 +1,7 @@
-diff --git b/epochX/cudacpp/gg_tt.mad/SubProcesses/makefile a/epochX/cudacpp/gg_tt.mad/SubProcesses/makefile
-index 348c283be..49e6800ff 100644
---- b/epochX/cudacpp/gg_tt.mad/SubProcesses/makefile
-+++ a/epochX/cudacpp/gg_tt.mad/SubProcesses/makefile
+diff --git a/epochX/cudacpp/gg_tt.mad/SubProcesses/makefile b/epochX/cudacpp/gg_tt.mad/SubProcesses/makefile
+index 348c283be..1833697b3 100644
+--- a/epochX/cudacpp/gg_tt.mad/SubProcesses/makefile
++++ b/epochX/cudacpp/gg_tt.mad/SubProcesses/makefile
 @@ -1,6 +1,37 @@
 +SHELL := /bin/bash
 +
@@ -40,7 +40,7 @@ index 348c283be..49e6800ff 100644
  # Load additional dependencies of the bias module, if present
  ifeq (,$(wildcard ../bias_dependencies))
  BIASDEPENDENCIES =
-@@ -24,7 +55,20 @@ else
+@@ -24,7 +55,23 @@ else
      MADLOOP_LIB =
  endif
  
@@ -55,6 +55,9 @@ index 348c283be..49e6800ff 100644
 +else ifeq ($(BACKEND),hip)
 +CUDACPP_COMMONLIB=mg5amc_common_hip
 +CUDACPP_BACKENDLIB=mg5amc_$(processid_short)_hip
++else ifeq ($(BACKEND),sycl)
++CUDACPP_COMMONLIB=mg5amc_common_sycl
++CUDACPP_BACKENDLIB=mg5amc_$(processid_short)_sycl
 +else
 +CUDACPP_COMMONLIB=mg5amc_common_cpp
 +CUDACPP_BACKENDLIB=mg5amc_$(processid_short)_cpp
@@ -62,7 +65,7 @@ index 348c283be..49e6800ff 100644
  
  LIBS = $(LIBDIR)libbias.$(libext) $(LIBDIR)libdhelas.$(libext) $(LIBDIR)libdsample.$(libext) $(LIBDIR)libgeneric.$(libext) $(LIBDIR)libpdf.$(libext) $(LIBDIR)libgammaUPC.$(libext) $(LIBDIR)libmodel.$(libext) $(LIBDIR)libcernlib.$(libext) $(MADLOOP_LIB) $(LOOP_LIBS)
  
-@@ -43,41 +87,148 @@ ifeq ($(strip $(MATRIX_HEL)),)
+@@ -43,41 +90,159 @@ ifeq ($(strip $(MATRIX_HEL)),)
  endif
  
  
@@ -100,6 +103,8 @@ index 348c283be..49e6800ff 100644
 +all: $(PROG)_fortran $(CUDACPP_BUILDDIR)/$(PROG)_cuda
 +else ifeq ($(BACKEND),hip)
 +all: $(PROG)_fortran $(CUDACPP_BUILDDIR)/$(PROG)_hip
++ifeq ($(BACKEND),sycl)
++all: $(PROG)_fortran $(CUDACPP_BUILDDIR)/$(PROG)_sycl
 +else
 +all: $(PROG)_fortran $(CUDACPP_BUILDDIR)/$(PROG)_cpp
 +endif
@@ -121,11 +126,11 @@ index 348c283be..49e6800ff 100644
 +override OMPFLAGS = -fopenmp
 +endif
 +endif
-+
-+$(PROG)_fortran: $(PROCESS) $(DSIG) auto_dsig.o $(LIBS) $(MATRIX) counters.o ompnumthreads.o
-+	$(FC) -o $(PROG)_fortran $(PROCESS) $(DSIG) auto_dsig.o $(MATRIX) $(LINKLIBS) $(BIASDEPENDENCIES) $(OMPFLAGS) counters.o ompnumthreads.o $(LDFLAGS)
  
 -$(LIBDIR)libgeneric.$(libext): ../../Cards/run_card.dat
++$(PROG)_fortran: $(PROCESS) $(DSIG) auto_dsig.o $(LIBS) $(MATRIX) counters.o ompnumthreads.o
++	$(FC) -o $(PROG)_fortran $(PROCESS) $(DSIG) auto_dsig.o $(MATRIX) $(LINKLIBS) $(BIASDEPENDENCIES) $(OMPFLAGS) counters.o ompnumthreads.o $(LDFLAGS)
++
 +$(LIBS): .libs
 +
 +.libs: ../../Cards/param_card.dat ../../Cards/run_card.dat
@@ -147,7 +152,7 @@ index 348c283be..49e6800ff 100644
 +  override LIBFLAGSRPATH = -Wl,-rpath,'$$ORIGIN/$(LIBDIR)'
 +endif
 +
-+.PHONY: madevent_fortran_link madevent_cuda_link madevent_hip_link madevent_cpp_link
++.PHONY: madevent_fortran_link madevent_cuda_link madevent_hip_link madevent_sycl_link madevent_cpp_link
 +
 +madevent_fortran_link: $(PROG)_fortran
 +	rm -f $(PROG)
@@ -163,13 +168,16 @@ index 348c283be..49e6800ff 100644
 +	rm -f $(PROG)
 +	ln -s $(CUDACPP_BUILDDIR)/$(PROG)_hip $(PROG)
 +
++madevent_sycl_link:
++	$(MAKE) USEGTEST=0 BACKEND=sycl $(CUDACPP_BUILDDIR)/$(PROG)_sycl
++	rm -f $(PROG)
++	ln -s $(CUDACPP_BUILDDIR)/$(PROG)_sycl $(PROG)
++
 +madevent_cpp_link:
 +	$(MAKE) USEGTEST=0 BACKEND=cppauto $(CUDACPP_BUILDDIR)/$(PROG)_cpp
 +	rm -f $(PROG)
 +	ln -s $(CUDACPP_BUILDDIR)/$(PROG)_cpp $(PROG)
- 
--$(LIBDIR)libpdf.$(libext): 
--	cd ../../Source/PDF; make
++
 +override SUPPORTED_AVXS = cppnone cppsse4 cppavx2 cpp512y cpp512z cppauto
 +madevent_%_link:
 +	@if [ '$(words $(filter $*, $(SUPPORTED_AVXS)))' != '1' ]; then echo "ERROR! Invalid target '$@' (supported madevent_cpp*_link targets are: $(foreach avx,$(SUPPORTED_AVXS),'madevent_cpp$(avx)_link'))"; exit 1; fi
@@ -177,12 +185,14 @@ index 348c283be..49e6800ff 100644
 +	rm -f $(PROG)
 +	ln -s $(CUDACPP_BUILDDIR)/$(PROG)_cpp $(PROG)
  
--$(LIBDIR)libgammaUPC.$(libext):
--	cd ../../Source/PDF/gammaUPC; make
+-$(LIBDIR)libpdf.$(libext): 
+-	cd ../../Source/PDF; make
 +# Building $(PROG)_cpp no longer builds $(PROG)_cuda if CUDACPP_BACKENDLIB for cuda exists (this was the case in the past to allow cpp-only builds #503)
 +$(CUDACPP_BUILDDIR)/$(PROG)_cpp: $(PROCESS) $(DSIG_cudacpp) auto_dsig.o $(LIBS) $(MATRIX) counters.o ompnumthreads.o $(CUDACPP_BUILDDIR)/.cudacpplibs
 +	$(FC) -o $@ $(PROCESS) $(DSIG_cudacpp) auto_dsig.o $(MATRIX) $(LINKLIBS) $(BIASDEPENDENCIES) $(OMPFLAGS) counters.o ompnumthreads.o -L$(LIBDIR)/$(CUDACPP_BUILDDIR) -l$(CUDACPP_COMMONLIB) -l$(CUDACPP_BACKENDLIB) $(LIBFLAGSRPATH) $(LDFLAGS)
-+
+ 
+-$(LIBDIR)libgammaUPC.$(libext):
+-	cd ../../Source/PDF/gammaUPC; make
 +# Building $(PROG)_cuda now uses its own rule
 +$(CUDACPP_BUILDDIR)/$(PROG)_cuda: $(PROCESS) $(DSIG_cudacpp) auto_dsig.o $(LIBS) $(MATRIX) counters.o ompnumthreads.o $(CUDACPP_BUILDDIR)/.cudacpplibs
 +	$(FC) -o $@ $(PROCESS) $(DSIG_cudacpp) auto_dsig.o $(MATRIX) $(LINKLIBS) $(BIASDEPENDENCIES) $(OMPFLAGS) counters.o ompnumthreads.o -L$(LIBDIR)/$(CUDACPP_BUILDDIR) -l$(CUDACPP_COMMONLIB) -l$(CUDACPP_BACKENDLIB) $(LIBFLAGSRPATH) $(LDFLAGS)
@@ -190,6 +200,10 @@ index 348c283be..49e6800ff 100644
 +# Building $(PROG)_hip also uses its own rule
 +$(CUDACPP_BUILDDIR)/$(PROG)_hip: $(PROCESS) $(DSIG_cudacpp) auto_dsig.o $(LIBS) $(MATRIX) counters.o ompnumthreads.o $(CUDACPP_BUILDDIR)/.cudacpplibs
 +	$(FC) -o $@ $(PROCESS) $(DSIG_cudacpp) auto_dsig.o $(MATRIX) $(LINKLIBS) $(BIASDEPENDENCIES) $(OMPFLAGS) counters.o ompnumthreads.o -L$(LIBDIR)/$(CUDACPP_BUILDDIR) -l$(CUDACPP_COMMONLIB) -l$(CUDACPP_BACKENDLIB) $(LIBFLAGSRPATH) $(LDFLAGS)
++
++# Building $(PROG)_sycl uses its own rule
++$(CUDACPP_BUILDDIR)/$(PROG)_sycl: $(PROCESS) $(DSIG_cudacpp) auto_dsig.o $(LIBS) $(MATRIX) counters.o ompnumthreads.o $(CUDACPP_BUILDDIR)/.cudacpplibs
++	$(CXX) -fsycl -o $@ $(PROCESS) $(DSIG_cudacpp) auto_dsig.o $(MATRIX) $(LINKLIBS) $(BIASDEPENDENCIES) $(OMPFLAGS) counters.o ompnumthreads.o -L$(LIBDIR)/$(CUDACPP_BUILDDIR) -l$(CUDACPP_COMMONLIB) -l$(CUDACPP_BACKENDLIB) $(LIBFLAGSRPATH) $(LDFLAGS)
 +
 +counters.o: counters.cc timer.h
 +	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -227,7 +241,7 @@ index 348c283be..49e6800ff 100644
  
  # Dependencies
  
-@@ -97,5 +248,80 @@ unwgt.o: genps.inc nexternal.inc symswap.inc cluster.inc run.inc message.inc \
+@@ -97,5 +262,94 @@ unwgt.o: genps.inc nexternal.inc symswap.inc cluster.inc run.inc message.inc \
  	 run_config.inc
  initcluster.o: message.inc
  
@@ -251,19 +265,29 @@ index 348c283be..49e6800ff 100644
 +bldavxs: bldnone bldsse4 bldavx2 bld512y bld512z
 +endif
 +
++# Check if the current CXX supports SYCL
++SYCL_SUPPORTED := $(shell echo "#include <CL/sycl.hpp>" | $(CXX) -x c++ -fsycl - -o /dev/null 2>/dev/null && echo yes || echo no)
++
++# Initialize the bldall target
++bldall:
++
++# Add HIP to bldall if hipcc is available
 +ifneq ($(shell which hipcc 2>/dev/null),)
-+ifneq ($(shell which nvcc 2>/dev/null),)
-+bldall: bldhip bldcuda bldavxs
-+else
-+bldall: bldhip bldavxs
++bldall: bldhip
 +endif
-+else
++
++# Add CUDA to bldall if nvcc is available
 +ifneq ($(shell which nvcc 2>/dev/null),)
-+bldall: bldcuda bldavxs
-+else
++bldall: bldcuda
++endif
++
++# Add SYCL to bldall if the compiler supports SYCL
++ifneq ($(SYCL_SUPPORTED),no)
++bldall: bldsycl
++endif
++
++# Always include AVX targets
 +bldall: bldavxs
-+endif
-+endif
 +
 +bldcuda: $(PROG)_fortran $(DSIG_cudacpp)
 +	@echo
@@ -272,6 +296,10 @@ index 348c283be..49e6800ff 100644
 +bldhip: $(PROG)_fortran $(DSIG_cudacpp)
 +	@echo
 +	$(MAKE) USEBUILDDIR=1 BACKEND=hip
++
++bldsycl: $(PROG)_fortran $(DSIG_cudacpp)
++	@echo
++	$(MAKE) USEBUILDDIR=1 BACKEND=sycl
 +
 +bldnone: $(PROG)_fortran $(DSIG_cudacpp)
 +	@echo
